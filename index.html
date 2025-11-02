@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>PostGenie — Poster Maker</title>
+
+<!-- Fonts + Export -->
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;700;900&family=Poppins:wght@400;700;900&family=Montserrat:wght@400;700;900&family=Space+Grotesk:wght@400;700&family=Roboto+Mono:wght@400;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/html-to-image@1.11.11/dist/html-to-image.js"></script>
+
+<style>
+  :root{ --pad:24px; --radius:24px; --chip:#ffffff18; }
+  *{ box-sizing:border-box; }
+  body{
+    margin:0; color:#e6edf5; background:#0b1020;
+    font-family:Inter,system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+    display:grid; grid-template-columns:360px 1fr; min-height:100vh; gap:16px;
+  }
+  aside{
+    position:sticky; top:0; height:100dvh; overflow:auto;
+    padding:18px; border-right:1px solid #18203a;
+    background:linear-gradient(180deg,#0e1528 0,#0b1020 100%);
+  }
+  h1{font:900 22px Outfit,system-ui; margin:2px 0 8px}
+  .sub{color:#9fb0c9; font-size:13px; margin-bottom:14px}
+  .row{display:flex; gap:10px; margin:8px 0; align-items:center}
+  .stack{display:flex; flex-direction:column; gap:8px}
+  button,select,input[type="text"],input[type="color"],input[type="number"]{
+    border-radius:12px; border:1px solid #223153; background:#0f172a; color:#e6edf5;
+    padding:10px 12px; font-weight:700;
+  }
+  button.primary{background:#3b82f6;}
+  .chip{background:#0f172a; border:1px solid #223153; padding:8px 12px; border-radius:999px; font-weight:700}
+  .sep{height:1px; background:#18203a; margin:14px 0}
+  label.small{font-size:12px; color:#9fb0c9;}
+  input[type="range"]{ width:100%; accent-color:#8b5cf6; }
+
+  main{display:grid; place-items:center; padding:20px}
+  .stage{
+    width:760px; aspect-ratio:4/5; border-radius:var(--radius); position:relative; overflow:hidden; isolation:isolate;
+    box-shadow:0 40px 140px #0009, inset 0 0 0 1px #ffffff14;
+    background: linear-gradient(140deg,#0ea5e9,#22c55e);
+  }
+  #stickerLayer{ position:absolute; inset:0; z-index:5; pointer-events:auto; }
+  .poster{ position:absolute; inset:var(--pad); z-index:3; display:flex; flex-direction:column; justify-content:space-between }
+
+  .kicker{font:900 14px Outfit; letter-spacing:.22em; color:#c7d2fe; text-transform:uppercase}
+  .title{
+    font:900 clamp(42px,7vw,86px) Outfit; line-height:.92; letter-spacing:-.02em;
+    color:transparent; background:linear-gradient(180deg,#fff,#d6e9ff,#a5b4fc);
+    -webkit-background-clip:text; background-clip:text; text-shadow:0 12px 28px #0008; -webkit-text-stroke:1px rgba(0,0,0,.55);
+  }
+  .tag{font:600 clamp(14px,2.2vw,18px) Inter; color:#eaf2ff; opacity:.95; margin-top:8px; max-width:45ch}
+  .badges{display:flex; flex-wrap:wrap; gap:10px; margin-top:16px}
+  .badge{background:var(--chip); border:1px solid #ffffff33; backdrop-filter:blur(10px);
+    padding:8px 12px; border-radius:12px; font:700 13px Inter; box-shadow:inset 0 0 0 1px #ffffff14, 0 6px 20px #0006;}
+  .brand{display:flex; align-items:center; gap:10px; margin-top:10px; color:#d1dae7; font-weight:700}
+  .logo{width:30px; height:30px; border-radius:9px; background:#0f172a; border:1px solid #1f2a44; display:grid; place-items:center}
+
+  /* Stickers (text + image) */
+  .img-sticker,.txt-sticker{
+    position:absolute; pointer-events:auto; user-select:none; cursor:move; touch-action:none;
+    box-shadow:0 8px 24px #0008, inset 0 0 0 1px #ffffff22; border-radius:14px;
+  }
+  .img-sticker{ overflow:hidden; border:1px solid rgba(255,255,255,.45); width:120px; height:120px; }
+  .img-sticker img{ width:100%; height:100%; object-fit:cover; display:block; }
+  .txt-sticker{
+    padding:10px 12px; font:800 20px Outfit,system-ui; color:#0b1020; background:#ffffff;
+    border:1px solid rgba(255,255,255,.6); border-radius:12px;
+  }
+  .sticker-selected{ outline:2px solid #8b5cf6; outline-offset:2px; }
+  .close{
+    position:absolute; top:-8px; right:-8px; width:22px; height:22px; border-radius:999px;
+    background:#0f172a; border:1px solid #ffffff55; display:grid; place-items:center; font-weight:900; font-size:12px; color:#fff;
+    cursor:pointer; box-shadow:0 4px 10px #0009;
+  }
+  .close:hover{ background:#ef4444; border-color:#ffffffaa; }
+</style>
+</head>
+<body>
+  <aside>
+    <h1>PostGenie</h1>
+    <div class="sub">Bold, textured, hackathon-ready posters. Shuffle → tweak → export PNG.</div>
+
+    <div class="stack">
+      <button id="generate" class="primary">🎲 Generate New</button>
+      <div class="row"><button id="r45" class="chip">4:5</button><button id="r169" class="chip">16:9</button></div>
+      <button id="download" class="primary">⬇️ Download PNG</button>
+    </div>
+
+    <div class="sep"></div>
+    <input id="titleInput" placeholder="Event Title (override)" />
+    <label class="small"><input id="lockTitle" type="checkbox" /> Lock title</label>
+    <input id="taglineInput" placeholder="Tagline (optional)" />
+    <div class="sep"></div>
+    <input id="date"  placeholder="Date (e.g., Tue • Nov 12)" />
+    <input id="time"  placeholder="Time (e.g., 6:00–8:00 PM)" />
+    <input id="venue" placeholder="Venue (e.g., LT-3, Main Block)" />
+    <input id="org"   placeholder="Organizer (e.g., Student Council)" />
+
+    <div class="sep"></div>
+    <label class="small">Add Text Sticker</label>
+    <input id="txtValue" placeholder="Type your message…" />
+    <div class="row">
+      <select id="txtFont">
+        <option value="'Outfit',sans-serif">Outfit</option>
+        <option value="'Poppins',sans-serif">Poppins</option>
+        <option value="'Montserrat',sans-serif">Montserrat</option>
+        <option value="'Space Grotesk',sans-serif">Space Grotesk</option>
+        <option value="'Roboto Mono',monospace">Roboto Mono</option>
+      </select>
+      <input id="txtColor" type="color" value="#ffffff" title="Text color" />
+      <button id="addText" class="chip">Add Text</button>
+    </div>
+    <label class="small">Text Size</label>
+    <input id="txtSize" type="range" min="12" max="64" value="20" />
+
+    <div class="row">
+      <label class="small" style="width:120px;">Box Color</label>
+      <input id="txtBgColor" type="color" value="#000000" />
+      <label class="small" style="width:70px;">Opacity</label>
+      <input id="txtBgAlpha" type="range" min="0" max="100" value="60" />
+    </div>
+
+    <div class="sep"></div>
+    <label class="small">Small Images</label>
+    <input id="imgUpload" type="file" accept="image/*" multiple />
+    <label class="small">Image Size</label>
+    <input id="imgSize" type="range" min="64" max="220" value="120" />
+    <button id="clearImgs" class="chip">Remove All Images</button>
+
+    <div class="sep"></div>
+    <div class="row">
+      <button id="deleteSelected" class="chip" title="Delete selected (Del)">🗑️ Delete Selected</button>
+      <span class="small" style="opacity:.8">Tip: click a sticker to select. Drag to move. Press <b>Delete</b> to remove.</span>
+    </div>
+  </aside>
+
+  <main>
+    <div id="stage" class="stage">
+      <div id="stickerLayer"></div>
+      <div class="poster">
+        <div>
+          <div id="kicker" class="kicker">HACKATHON</div>
+          <div id="title" class="title">Indigo Showcase</div>
+          <div id="tag" class="tag">Build with friends, brag later.</div>
+        </div>
+        <div>
+          <div class="badges">
+            <div id="bDate"  class="badge">Tue • Nov 12</div>
+            <div id="bTime"  class="badge">6:00–8:00 PM</div>
+            <div id="bVenue" class="badge">LT-3, Main Block</div>
+          </div>
+          <div class="brand"><div id="logo" class="logo">S</div><div id="orgname">Student Council</div></div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+<script>
+/* ------------------ helpers ------------------ */
+const rand = a => a[Math.floor(Math.random()*a.length)];
+function hexToRgb(hex){
+  const h = hex.replace('#','');
+  const bigint = parseInt(h.length===3 ? h.split('').map(c=>c+c).join('') : h, 16);
+  return { r:(bigint>>16)&255, g:(bigint>>8)&255, b:bigint&255 };
+}
+function rgba(hex, alpha){
+  const {r,g,b}=hexToRgb(hex); return `rgba(${r},${g},${b},${alpha})`;
+}
+const TAGLINES = [
+  "Build with friends, brag later.",
+  "Create, collide, celebrate.",
+  "Code • Coffee • Community."
+];
+const CATS = ["Hackathon","Workshop","Cultural Night","Sports","Music"];
+const WORDS = ["Indigo","Quantum","Pixel","Fusion","Retro","Aurora","Neon","Nova"];
+const NOUNS = ["Showcase","Night","Jam","Sprint","Fiesta"];
+
+/* ------------------ content ------------------ */
+function makeTitle(){ return {cat:rand(CATS), text:`${rand(WORDS)} ${rand(NOUNS)}`}; }
+function generate(){
+  const {cat,text}=makeTitle();
+  const titleIn=document.getElementById('titleInput').value.trim();
+  const lock=document.getElementById('lockTitle').checked;
+  document.getElementById('kicker').textContent=cat.toUpperCase();
+  document.getElementById('title').textContent=(titleIn||!lock)?(titleIn||text):document.getElementById('title').textContent;
+  document.getElementById('tag').textContent=document.getElementById('taglineInput').value||rand(TAGLINES);
+  document.getElementById('bDate').textContent=document.getElementById('date').value||"Tue • Nov 12";
+  document.getElementById('bTime').textContent=document.getElementById('time').value||"6:00–8:00 PM";
+  document.getElementById('bVenue').textContent=document.getElementById('venue').value||"LT-3, Main Block";
+  const org=document.getElementById('org').value||"Student Council";
+  document.getElementById('orgname').textContent=org;
+  document.getElementById('logo').textContent=org.charAt(0).toUpperCase();
+}
+
+/* ------------------ stickers: create/select/drag/delete ------------------ */
+const layer = document.getElementById('stickerLayer');
+let zTop = 10;
+let selected = null;
+
+function selectSticker(el){
+  if(selected) selected.classList.remove('sticker-selected');
+  selected = el;
+  if(selected) selected.classList.add('sticker-selected');
+}
+function addCloseButton(el){
+  const x = document.createElement('div');
+  x.className = 'close'; x.textContent = '×';
+  x.onclick = (e)=>{ e.stopPropagation(); if(el===selected) selected=null; el.remove(); };
+  el.appendChild(x);
+}
+function makeDraggable(el){
+  let drag=false,offX=0,offY=0;
+  el.addEventListener('mousedown',e=>{
+    drag=true; el.style.zIndex=++zTop; offX=e.offsetX; offY=e.offsetY; selectSticker(el);
+  });
+  window.addEventListener('mousemove',e=>{
+    if(!drag)return;
+    const r=layer.getBoundingClientRect();
+    el.style.left=(e.clientX-r.left-offX)+'px';
+    el.style.top =(e.clientY-r.top -offY)+'px';
+  });
+  window.addEventListener('mouseup',()=>drag=false);
+  el.addEventListener('click',()=>selectSticker(el));
+}
+function addTextSticker(){
+  const txt=document.getElementById('txtValue').value.trim();
+  if(!txt) return;
+  const font=document.getElementById('txtFont').value;
+  const color=document.getElementById('txtColor').value;
+  const size=+document.getElementById('txtSize').value||20;
+  const bgColor=document.getElementById('txtBgColor').value;
+  const bgAlpha=(+document.getElementById('txtBgAlpha').value||60)/100;
+
+  const el=document.createElement('div');
+  el.className='txt-sticker';
+  el.textContent=txt;
+  el.style.fontFamily = font;
+  el.style.color = color;
+  el.style.fontSize = size+'px';
+  el.style.background = rgba(bgColor,bgAlpha);
+  el.style.left='70px'; el.style.top='70px';
+  addCloseButton(el);
+  layer.appendChild(el);
+  makeDraggable(el);
+  selectSticker(el);
+  document.getElementById('txtValue').value='';
+}
+function addImages(files){
+  const size=+document.getElementById('imgSize').value||120;
+  [...files].slice(0,10).forEach(f=>{
+    const fr=new FileReader();
+    fr.onload=()=>{
+      const el=document.createElement('div');
+      el.className='img-sticker';
+      el.style.width=size+'px'; el.style.height=size+'px';
+      el.style.left='110px'; el.style.top='110px';
+      el.innerHTML=`<img src="${fr.result}" alt="">`;
+      addCloseButton(el);
+      layer.appendChild(el);
+      makeDraggable(el);
+      selectSticker(el);
+    };
+    fr.readAsDataURL(f);
+  });
+}
+
+/* --- property controls bound to selected sticker --- */
+function applyTextControls(){
+  if(!selected || !selected.classList.contains('txt-sticker')) return;
+  selected.style.fontFamily = document.getElementById('txtFont').value;
+  selected.style.color      = document.getElementById('txtColor').value;
+  selected.style.fontSize   = (+document.getElementById('txtSize').value||20)+'px';
+  const bg = document.getElementById('txtBgColor').value;
+  const a  = (+document.getElementById('txtBgAlpha').value||60)/100;
+  selected.style.background = rgba(bg,a);
+}
+function resizeImages(){
+  const size=+document.getElementById('imgSize').value||120;
+  if(selected && selected.classList.contains('img-sticker')){
+    selected.style.width=size+'px'; selected.style.height=size+'px';
+  }else{
+    layer.querySelectorAll('.img-sticker').forEach(el=>{ el.style.width=size+'px'; el.style.height=size+'px'; });
+  }
+}
+
+/* delete */
+function deleteSelected(){
+  if(selected){ const n=selected; selected=null; n.remove(); }
+}
+window.addEventListener('keydown',e=>{ if(e.key==='Delete'){ deleteSelected(); }});
+
+/* ------------------ export ------------------ */
+async function downloadPNG(){
+  const node=document.getElementById('stage');
+  // unselect outlines for clean export
+  if(selected) selected.classList.remove('sticker-selected');
+  try{
+    const dataUrl=await htmlToImage.toPng(node,{cacheBust:true,pixelRatio:2,backgroundColor:null});
+    const a=document.createElement('a'); a.href=dataUrl; a.download='poster.png'; a.click();
+  }catch(e){
+    const canvas=await html2canvas(node,{scale:2,backgroundColor:null});
+    const a=document.createElement('a'); a.href=canvas.toDataURL('image/png'); a.download='poster.png'; a.click();
+  }finally{
+    if(selected) selected.classList.add('sticker-selected');
+  }
+}
+
+/* ------------------ wire up ------------------ */
+document.getElementById('generate').onclick = generate;
+document.getElementById('r45').onclick = ()=>{ const s=document.getElementById('stage'); s.style.aspectRatio="4/5"; s.style.width="760px"; };
+document.getElementById('r169').onclick= ()=>{ const s=document.getElementById('stage'); s.style.aspectRatio="16/9"; s.style.width="1160px"; };
+document.getElementById('download').onclick = downloadPNG;
+
+document.getElementById('addText').onclick = addTextSticker;
+document.getElementById('imgUpload').addEventListener('change',e=>addImages(e.target.files));
+document.getElementById('imgSize').addEventListener('input',resizeImages);
+document.getElementById('clearImgs').onclick = ()=>layer.querySelectorAll('.img-sticker').forEach(e=>e.remove());
+document.getElementById('deleteSelected').onclick = deleteSelected;
+
+/* live property updates for selected text sticker */
+['txtFont','txtColor','txtSize','txtBgColor','txtBgAlpha'].forEach(id=>{
+  document.getElementById(id).addEventListener('input', applyTextControls);
+});
+
+generate(); // initial
+</script>
+</body>
+</html>
